@@ -11,8 +11,8 @@ html(lang="en")
     .container
       .row.justify-content-center
         main.col-10
-          div(hx-ws="connect:/tweet")
-            form(hx-ws="send:submit")
+          div(hx-ws="connect:wss://ctf-netlab-ws-services.dgrttk.easypanel.host/chats")
+            form(hx-target="#timeline" hx-swap="beforeend" hx-post="/send")
               input.form-control(type="hidden", name="username", value=name, readonly)
               .mb-3.row
                 label(for="txtMessage") Message:
@@ -25,3 +25,45 @@ html(lang="en")
             != tweetsMarkup
     script(src="https://unpkg.com/htmx.org@1.3.1")
     script(src="https://unpkg.com/hyperscript.org@0.0.5")
+    script.
+      htmx.on("htmx:afterRequest", (event) => {
+        event.preventDefault();
+      });
+      const socket = new WebSocket("wss://ctf-netlab-ws-services.dgrttk.easypanel.host/chats");
+      socket.addEventListener("message", async (event) => {
+        const data = JSON.parse(event.data);
+        const tweetEl = document.createElement('div');
+
+        let tweet = '<div hx-swap-oob="afterbegin:#timeline">';
+
+        tweet += '<div class="card mb-2 shadow-sm" id="tweet-' + data.id + '">';
+        tweet += '<div class="card-body">';
+
+        tweet += '<div class="d-flex">';
+        tweet += '<img class="me-4" src="' + data.avatar + '" width="108">';
+
+        tweet += '<div>';
+        tweet += '<h5 class="card-title text-muted">';
+        tweet += data.username;
+        tweet += '<small>' + data.time + '</small>';
+        tweet += '</h5>';
+        tweet += '<p class="card-text lead mb-2">';
+        tweet += data.message;
+        tweet += '</p>';
+        tweet += '</div>';
+        tweet += '</div>';
+        tweet += '<button class="btn btn-link text-decoration-none" id="like-' + data.id + '" type="button" hx-post="/like/' + data.id + '">';
+        tweet += 'Like (' + data.likes + ')';
+        tweet += '</button>';
+        tweet += '<button class="btn btn-link ps-0 text-decoration-none" id="retweet-' + data.id + '" type="button" hx-post="/retweet/' + data.id + '">';
+        tweet += 'Retweet (' + data.retweets + ')';
+        tweet += '</button>';
+        tweet += '</div>'; // card-body
+        tweet += '</div>'; // card
+        tweet += '</div>'; 
+
+        tweetEl.innerHTML = tweet;
+        document.querySelector('#timeline').prepend(tweetEl)
+      });
+
+    

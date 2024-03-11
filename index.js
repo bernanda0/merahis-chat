@@ -7,13 +7,15 @@ const relativeTime = require("dayjs/plugin/relativeTime");
 const Chance = require("chance");
 const compression = require("compression");
 const Redis = require("ioredis");
+const WebSocket = require("ws");
 require("dotenv").config();
 
-const app = express();
-const expressWs = require("express-ws")(app);
-const PORT = process.env.PORT || 3000;
+const socket = new WebSocket(
+  "wss://ctf-netlab-ws-services.dgrttk.easypanel.host/chats"
+);
 
-const tweetChannel = expressWs.getWss("/tweet");
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 const chance = new Chance();
 let username = "";
@@ -57,39 +59,31 @@ app.get("/", async (req, res) => {
   res.render("index", { name: username, tweetsMarkup: markup });
 });
 
-app.ws("/tweet", function (ws, req) {
-  ws.on("message", async function (msg) {
-    const { message, username } = JSON.parse(msg);
-
-    const _tweet = {
-      id: v4(),
-      message,
+app.post("/send", async (req, res) => {
+  console.log("Sending tweet");
+  const { message, username } = req.body;
+  const _tweet = {
+    id: v4(),
+    message,
+    username,
+    retweets: 0,
+    likes: 0,
+    time: new Date().toString(),
+    avatar:
+      "https://ui-avatars.com/api/?background=random&rounded=true&name=" +
       username,
-      retweets: 0,
-      likes: 0,
-      time: new Date().toString(),
-      avatar:
-        "https://ui-avatars.com/api/?background=random&rounded=true&name=" +
-        username,
-    };
+  };
 
-    // Store tweet in Redis
-    await redis.zadd("tweets", Date.now(), _tweet.id);
-    await redis.hmset(`tweet:${_tweet.id}`, _tweet);
+  // Store tweet in Redis
+  await redis.zadd("tweets", Date.now(), _tweet.id);
+  await redis.hmset(`tweet:${_tweet.id}`, _tweet);
+  // Format time
+  _tweet.time = dayjs().to(dayjs(_tweet.time));
 
-    const posts = pug.compileFile("views/components/post.pug", {
-      globals: ["global"],
-    });
-
-    // Format time
-    _tweet.time = dayjs().to(dayjs(_tweet.time));
-
-    const markup = posts({ t: _tweet });
-
-    tweetChannel.clients.forEach(function (client) {
-      client.send(markup);
-    });
-  });
+  // send the _tweet via websocket
+  console.log("Sent tweet");
+  socket.send(JSON.stringify(_tweet));
+  res.status(200);
 });
 
 app.post("/like/:id", async (req, res) => {
@@ -100,13 +94,8 @@ app.post("/like/:id", async (req, res) => {
   // Update like count in Redis
   await redis.hmset(`tweet:${id}`, tweet);
 
-  const likes = pug.compileFile("views/components/likes.pug");
-  const markup = likes({ t: tweet });
-  tweetChannel.clients.forEach(function (client) {
-    client.send(markup);
-  });
-
-  res.send(markup);
+  socket.send(JSON.stringify(tweet));
+  res.status(200);
 });
 
 app.post("/retweet/:id", async (req, res) => {
@@ -117,12 +106,8 @@ app.post("/retweet/:id", async (req, res) => {
   // Update retweet count in Redis
   await redis.hmset(`tweet:${id}`, tweet);
 
-  const retweets = pug.compileFile("views/components/retweets.pug");
-  const markup = retweets({ t: tweet });
-  tweetChannel.clients.forEach(function (client) {
-    client.send(markup);
-  });
-  res.send(markup);
+  socket.send(JSON.stringify(tweet));
+  res.status(200);
 });
 
 app.listen(PORT);
